@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sound Sampler</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f2eb;
+    --surface: #edeae0;
+    --border: #c8c4b8;
+    --ink: #1a1814;
+    --dim: #8a8680;
+    --accent: #d4500a;
+    --accent-light: rgba(212,80,10,0.08);
+    --green: #2a7a3b;
+    --green-light: rgba(42,122,59,0.1);
+    --red: #c0392b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  /* Paper texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 16px;
+    margin-bottom: 32px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  .version {
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 0.15em;
+  }
+
+  /* Section */
+  .section {
+    margin-bottom: 24px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .step-num {
+    width: 22px;
+    height: 22px;
+    background: var(--ink);
+    color: var(--bg);
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+  }
+
+  /* Sound name input */
+  .input-wrap {
+    display: flex;
+    gap: 0;
+  }
+
+  .input-label {
+    background: var(--ink);
+    color: var(--bg);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    border-radius: 3px 0 0 3px;
+    white-space: nowrap;
+  }
+
+  input[type="text"] {
+    flex: 1;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-left: none;
+    border-radius: 0 3px 3px 0;
+    padding: 10px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 14px;
+    color: var(--ink);
+    outline: none;
+  }
+
+  input[type="text"]:focus {
+    border-color: var(--accent);
+  }
+
+  /* Recording area */
+  .rec-area {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+
+  .rec-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* Waveform */
+  .waveform-wrap {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px;
+    position: relative;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+  }
+
+  #waveCanvas { height: 60px; }
+  #specCanvas { height: 80px; }
+
+  .canvas-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  /* Buttons */
+  .btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    padding: 10px 16px;
+    border: 1px solid var(--ink);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.12s;
+    text-transform: uppercase;
+    background: transparent;
+    color: var(--ink);
+    width: 100%;
+  }
+
+  .btn:hover { background: var(--ink); color: var(--bg); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn:disabled:hover { background: transparent; color: var(--ink); }
+
+  .btn-accent {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-accent:hover { background: #b8420a; border-color: #b8420a; color: #fff; }
+
+  .btn-record {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+    position: relative;
+  }
+  .btn-record:hover { background: #a93226; border-color: #a93226; color: #fff; }
+  .btn-record.recording {
+    animation: pulse-red 0.8s ease-in-out infinite;
+  }
+
+  @keyframes pulse-red {
+    0%, 100% { background: var(--red); }
+    50% { background: #e74c3c; }
+  }
+
+  /* Sample list */
+  .sample-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 40px;
+  }
+
+  .sample-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px 12px;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .sample-idx {
+    font-size: 10px;
+    color: var(--dim);
+    min-width: 20px;
+  }
+
+  .sample-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .sample-bar-fill {
+    height: 100%;
+    background: var(--green);
+    border-radius: 2px;
+  }
+
+  .sample-score {
+    font-size: 11px;
+    color: var(--green);
+    min-width: 50px;
+    text-align: right;
+  }
+
+  .sample-del {
+    background: none;
+    border: none;
+    color: var(--dim);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    line-height: 1;
+    transition: color 0.1s;
+  }
+  .sample-del:hover { color: var(--red); }
+
+  .empty-msg {
+    font-size: 11px;
+    color: var(--dim);
+    text-align: center;
+    padding: 12px;
+  }
+
+  /* Threshold */
+  .threshold-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 3px;
+    background: var(--border);
+    outline: none;
+    border-radius: 0;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .threshold-val {
+    font-size: 14px;
+    color: var(--accent);
+    font-weight: 500;
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* Status bar */
+  .status {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    padding: 8px 12px;
+    border-radius: 3px;
+    margin-top: 10px;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+  }
+
+  .status.ok { background: var(--green-light); color: var(--green); border: 1px solid rgba(42,122,59,0.2); }
+  .status.err { background: rgba(192,57,43,0.08); color: var(--red); border: 1px solid rgba(192,57,43,0.2); }
+  .status.info { background: var(--accent-light); color: var(--accent); border: 1px solid rgba(212,80,10,0.15); }
+  .status.neutral { background: var(--surface); color: var(--dim); border: 1px solid var(--border); }
+
+  /* Export */
+  .export-preview {
+    background: var(--ink);
+    color: #a8d8a8;
+    font-size: 11px;
+    line-height: 1.6;
+    padding: 14px 16px;
+    border-radius: 3px;
+    overflow-x: auto;
+    max-height: 160px;
+    overflow-y: auto;
+    white-space: pre;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
+  }
+
+  /* Vol meter */
+  .vol-meter {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+
+  .vol-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.05s;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Sound Sampler</h1>
+    <span class="version">v1.0</span>
+  </header>
+
+  <!-- Step 1: Sound name -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">1</div>
+      <div class="section-title">検出する音の名前</div>
+    </div>
+    <div class="card">
+      <div class="input-wrap">
+        <div class="input-label">NAME</div>
+        <input type="text" id="soundName" value="my-sound" placeholder="例: hihat, kick, clap">
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Recording -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">2</div>
+      <div class="section-title">サンプル録音（3〜5回推奨）</div>
+    </div>
+    <div class="card">
+      <div class="rec-area">
+        <div class="rec-controls">
+          <button class="btn" id="initBtn">マイクを初期化</button>
+          <button class="btn btn-record" id="recBtn" disabled>● 録音</button>
+          <div class="vol-meter"><div class="vol-bar" id="volBar"></div></div>
+          <div style="font-size:10px; color:var(--dim); margin-top:2px;">録音時間: 自動検出（最大1秒）</div>
+        </div>
+        <div>
+          <div class="canvas-label">WAVEFORM</div>
+          <div class="waveform-wrap">
+            <canvas id="waveCanvas"></canvas>
+          </div>
+          <div class="canvas-label" style="margin-top:10px;">SPECTRUM</div>
+          <div class="waveform-wrap">
+            <canvas id="specCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div id="status" class="status neutral">マイクを初期化してください</div>
+    </div>
+  </div>
+
+  <!-- Step 3: Samples -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">3</div>
+      <div class="section-title">録音済みサンプル</div>
+    </div>
+    <div class="card">
+      <div class="sample-list" id="sampleList">
+        <div class="empty-msg">サンプルがありません</div>
+      </div>
+      <hr class="divider">
+      <button class="btn" id="clearBtn" disabled>全サンプルをクリア</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Threshold -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">4</div>
+      <div class="section-title">検出閾値</div>
+    </div>
+    <div class="card">
+      <div class="threshold-wrap">
+        <span style="font-size:11px;color:var(--dim);">低</span>
+        <input type="range" id="threshold" min="0.5" max="0.99" step="0.01" value="0.75">
+        <span style="font-size:11px;color:var(--dim);">高</span>
+        <span class="threshold-val" id="thresholdVal">0.75</span>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-top:8px;">低すぎると誤検出、高すぎると検出漏れが増えます。0.70〜0.80が目安。</div>
+    </div>
+  </div>
+
+  <!-- Step 5: Export -->
+  <div class="section">
+    <div class="section-header">
+      <div class="step-num">5</div>
+      <div class="section-title">プロファイルをエクスポート</div>
+    </div>
+    <div class="card">
+      <pre class="export-preview" id="preview">// サンプルを録音するとここにプレビューが表示されます</pre>
+      <hr class="divider">
+      <button class="btn btn-accent" id="exportBtn" disabled>↓ profile.json をダウンロード</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  Audio Engine
+// ============================================================
+const FFT_SIZE = 2048;
+const SAMPLE_RATE_TARGET = 44100;
+const RECORD_DURATION = 1000; // ms
+const NUM_BANDS = 32; // バンド数（特徴量の次元）
+
+let audioCtx = null;
+let analyser = null;
+let micStream = null;
+let isRecording = false;
+let animFrameId = null;
+let samples = []; // 各録音の特徴ベクトル
+
+// DOM
+const initBtn = document.getElementById('initBtn');
+const recBtn = document.getElementById('recBtn');
+const clearBtn = document.getElementById('clearBtn');
+const exportBtn = document.getElementById('exportBtn');
+const statusEl = document.getElementById('status');
+const sampleList = document.getElementById('sampleList');
+const preview = document.getElementById('preview');
+const volBar = document.getElementById('volBar');
+const thresholdInput = document.getElementById('threshold');
+const thresholdVal = document.getElementById('thresholdVal');
+const soundNameInput = document.getElementById('soundName');
+
+const waveCanvas = document.getElementById('waveCanvas');
+const specCanvas = document.getElementById('specCanvas');
+const waveCtx = waveCanvas.getContext('2d');
+const specCtx = specCanvas.getContext('2d');
+
+// Canvas sizing
+function resizeCanvases() {
+  [waveCanvas, specCanvas].forEach(c => {
+    c.width = c.offsetWidth * devicePixelRatio;
+    c.height = c.offsetHeight * devicePixelRatio;
+  });
+}
+resizeCanvases();
+window.addEventListener('resize', resizeCanvases);
+
+// ============================================================
+//  Mic init
+// ============================================================
+initBtn.addEventListener('click', async () => {
+  try {
+    setStatus('info', 'マイクへのアクセスを要求中...');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE_TARGET });
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = FFT_SIZE;
+    analyser.smoothingTimeConstant = 0.5;
+
+    const source = audioCtx.createMediaStreamSource(stream);
+    source.connect(analyser);
+    micStream = stream;
+
+    setStatus('ok', 'マイク初期化完了。音を鳴らして「録音」を押してください。');
+    initBtn.disabled = true;
+    recBtn.disabled = false;
+    startVisualizer();
+  } catch(e) {
+    setStatus('err', 'マイクの取得に失敗: ' + e.message);
+  }
+});
+
+// ============================================================
+//  Visualizer
+// ============================================================
+function startVisualizer() {
+  const bufLen = analyser.frequencyBinCount;
+  const freqData = new Uint8Array(bufLen);
+  const timeData = new Uint8Array(bufLen);
+
+  function draw() {
+    animFrameId = requestAnimationFrame(draw);
+    analyser.getByteFrequencyData(freqData);
+    analyser.getByteTimeDomainData(timeData);
+
+    // Volume
+    const vol = freqData.reduce((a,b) => a+b, 0) / bufLen;
+    volBar.style.width = Math.min(100, vol * 1.2) + '%';
+
+    // Waveform
+    const W = waveCanvas.width, H = waveCanvas.height;
+    waveCtx.clearRect(0, 0, W, H);
+    waveCtx.strokeStyle = '#d4500a';
+    waveCtx.lineWidth = 1.5;
+    waveCtx.beginPath();
+    const sliceW = W / bufLen;
+    for (let i = 0; i < bufLen; i++) {
+      const v = timeData[i] / 128.0;
+      const y = (v * H) / 2;
+      i === 0 ? waveCtx.moveTo(0, y) : waveCtx.lineTo(i * sliceW, y);
+    }
+    waveCtx.stroke();
+
+    // Spectrum
+    const SW = specCanvas.width, SH = specCanvas.height;
+    specCtx.clearRect(0, 0, SW, SH);
+    const barW = SW / NUM_BANDS;
+    for (let i = 0; i < NUM_BANDS; i++) {
+      const start = Math.floor(i * bufLen / NUM_BANDS);
+      const end = Math.floor((i+1) * bufLen / NUM_BANDS);
+      let sum = 0;
+      for (let j = start; j < end; j++) sum += freqData[j];
+      const avg = sum / (end - start);
+      const h = (avg / 255) * SH;
+      const hue = 20 + (i / NUM_BANDS) * 40;
+      specCtx.fillStyle = `hsl(${hue}, 80%, 45%)`;
+      specCtx.fillRect(i * barW + 1, SH - h, barW - 2, h);
+    }
+  }
+  draw();
+}
+
+// ============================================================
+//  Recording & Feature extraction
+// ============================================================
+recBtn.addEventListener('click', () => {
+  if (isRecording) return;
+  isRecording = true;
+  recBtn.classList.add('recording');
+  recBtn.textContent = '● 録音中...';
+  setStatus('info', '録音中... 音を鳴らしてください');
+
+  const bufLen = analyser.frequencyBinCount;
+  const frames = [];
+  const startTime = Date.now();
+
+  function capture() {
+    if (Date.now() - startTime > RECORD_DURATION) {
+      finishRecording(frames);
+      return;
+    }
+    const freqData = new Float32Array(bufLen);
+    analyser.getFloatFrequencyData(freqData);
+    frames.push(Array.from(freqData));
+    requestAnimationFrame(capture);
+  }
+  requestAnimationFrame(capture);
+});
+
+function finishRecording(frames) {
+  isRecording = false;
+  recBtn.classList.remove('recording');
+  recBtn.textContent = '● 録音';
+
+  if (frames.length === 0) {
+    setStatus('err', '録音データが取得できませんでした');
+    return;
+  }
+
+  // 特徴量: NUM_BANDSバンドのエネルギー（dB平均）
+  const bufLen = frames[0].length;
+  const feature = new Array(NUM_BANDS).fill(0);
+
+  for (const frame of frames) {
+    for (let i = 0; i < NUM_BANDS; i++) {
+      const start = Math.floor(i * bufLen / NUM_BANDS);
+      const end = Math.floor((i+1) * bufLen / NUM_BANDS);
+      let sum = 0;
+      for (let j = start; j < end; j++) {
+        // dBを線形エネルギーに変換（-Infinityは0扱い）
+        const db = frame[j];
+        sum += db > -Infinity ? Math.pow(10, db / 20) : 0;
+      }
+      feature[i] += sum / (end - start);
+    }
+  }
+
+  // フレーム数で正規化
+  for (let i = 0; i < NUM_BANDS; i++) feature[i] /= frames.length;
+
+  // L2正規化（コサイン類似度計算のため）
+  const norm = Math.sqrt(feature.reduce((s, v) => s + v*v, 0));
+  const normalized = norm > 0 ? feature.map(v => v / norm) : feature;
+
+  samples.push(normalized);
+  updateSampleList();
+  updatePreview();
+  setStatus('ok', `サンプル #${samples.length} 登録完了`);
+}
+
+// ============================================================
+//  Sample list UI
+// ============================================================
+function updateSampleList() {
+  clearBtn.disabled = samples.length === 0;
+  exportBtn.disabled = samples.length === 0;
+
+  if (samples.length === 0) {
+    sampleList.innerHTML = '<div class="empty-msg">サンプルがありません</div>';
+    return;
+  }
+
+  // 各サンプルのエネルギー総量を表示
+  sampleList.innerHTML = samples.map((s, i) => {
+    const energy = s.reduce((a, v) => a + v, 0);
+    const maxE = Math.max(...samples.map(ss => ss.reduce((a,v)=>a+v,0)));
+    const pct = maxE > 0 ? (energy / maxE * 100).toFixed(0) : 0;
+    return `<div class="sample-item">
+      <span class="sample-idx">#${i+1}</span>
+      <div class="sample-bar"><div class="sample-bar-fill" style="width:${pct}%"></div></div>
+      <span class="sample-score">E=${energy.toFixed(3)}</span>
+      <button class="sample-del" onclick="deleteSample(${i})">×</button>
+    </div>`;
+  }).join('');
+}
+
+function deleteSample(i) {
+  samples.splice(i, 1);
+  updateSampleList();
+  updatePreview();
+}
+
+clearBtn.addEventListener('click', () => {
+  samples = [];
+  updateSampleList();
+  updatePreview();
+  setStatus('neutral', 'サンプルをクリアしました');
+});
+
+// ============================================================
+//  Threshold
+// ============================================================
+thresholdInput.addEventListener('input', () => {
+  thresholdVal.textContent = thresholdInput.value;
+  updatePreview();
+});
+
+// ============================================================
+//  Profile generation
+// ============================================================
+function buildProfile() {
+  if (samples.length === 0) return null;
+
+  // サンプルを平均して代表特徴ベクトルを作成
+  const mean = new Array(NUM_BANDS).fill(0);
+  for (const s of samples) {
+    for (let i = 0; i < NUM_BANDS; i++) mean[i] += s[i];
+  }
+  for (let i = 0; i < NUM_BANDS; i++) mean[i] /= samples.length;
+
+  // 再正規化
+  const norm = Math.sqrt(mean.reduce((s, v) => s + v*v, 0));
+  const feature = norm > 0 ? mean.map(v => v / norm) : mean;
+
+  // 各バンドの周波数範囲（情報用）
+  const nyquist = SAMPLE_RATE_TARGET / 2;
+  const binHz = nyquist / (FFT_SIZE / 2);
+  const bands = [];
+  for (let i = 0; i < NUM_BANDS; i++) {
+    const startBin = Math.floor(i * (FFT_SIZE/2) / NUM_BANDS);
+    const endBin = Math.floor((i+1) * (FFT_SIZE/2) / NUM_BANDS);
+    bands.push({
+      freqHz: [Math.round(startBin * binHz), Math.round(endBin * binHz)]
+    });
+  }
+
+  return {
+    name: soundNameInput.value || 'my-sound',
+    version: '1.0',
+    createdAt: new Date().toISOString(),
+    samplesCount: samples.length,
+    fftSize: FFT_SIZE,
+    numBands: NUM_BANDS,
+    threshold: parseFloat(thresholdInput.value),
+    feature: feature.map(v => parseFloat(v.toFixed(6))),
+    bands
+  };
+}
+
+function updatePreview() {
+  const profile = buildProfile();
+  if (!profile) {
+    preview.textContent = '// サンプルを録音するとここにプレビューが表示されます';
+    return;
+  }
+  // feature配列は長いので省略表示
+  const display = { ...profile, feature: `[... ${profile.numBands} values ...]` };
+  preview.textContent = JSON.stringify(display, null, 2).replace('"[... 32 values ...]"', '"[ ... 32 values ... ]"');
+}
+
+// ============================================================
+//  Export
+// ============================================================
+exportBtn.addEventListener('click', () => {
+  const profile = buildProfile();
+  if (!profile) return;
+
+  const blob = new Blob([JSON.stringify(profile, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (profile.name || 'sound') + '-profile.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('ok', `"${a.download}" をダウンロードしました`);
+});
+
+// ============================================================
+//  Helpers
+// ============================================================
+function setStatus(type, msg) {
+  statusEl.className = 'status ' + type;
+  statusEl.textContent = msg;
+}
+</script>
+</body>
+</html>

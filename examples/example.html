@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SoundDetector 利用例</title>
+<style>
+  body { font-family: monospace; padding: 40px; background: #0f0f0f; color: #e0e0e0; }
+  h2 { color: #c8ff00; margin-bottom: 20px; }
+  button { margin: 6px; padding: 10px 20px; font-family: monospace; cursor: pointer; background: #222; color: #fff; border: 1px solid #444; border-radius: 3px; }
+  button:hover { border-color: #c8ff00; }
+  #log { margin-top: 20px; padding: 16px; background: #111; border: 1px solid #333; border-radius: 3px; min-height: 80px; font-size: 13px; line-height: 1.8; }
+  .hit { color: #c8ff00; font-weight: bold; }
+  .info { color: #888; }
+  #score-bar { width: 300px; height: 8px; background: #333; border-radius: 4px; margin-top: 10px; }
+  #score-fill { height: 100%; background: #c8ff00; border-radius: 4px; width: 0%; transition: width 0.05s; }
+  #tuning { margin-top: 24px; padding: 16px; background: #111; border: 1px solid #333; border-radius: 3px; }
+  #tuning h3 { color: #c8ff00; margin: 0 0 12px; font-size: 13px; }
+  .param { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 13px; }
+  .param label { width: 180px; color: #aaa; }
+  .param input[type=range] { width: 180px; accent-color: #c8ff00; }
+  .param .val { width: 60px; color: #fff; }
+</style>
+</head>
+<body>
+<h2>SoundDetector 利用例</h2>
+
+<!-- 1. プロファイルファイルを選択 -->
+<input type="file" id="profileInput" accept=".json">
+<br>
+<button id="startBtn" disabled>▶ 検出開始</button>
+<button id="stopBtn" disabled>■ 停止</button>
+
+<div>スコア: <span id="scoreText">0.000</span></div>
+<div id="score-bar"><div id="score-fill"></div></div>
+
+<div id="tuning">
+  <h3>チューニング（リアルタイム反映）</h3>
+  <div class="param">
+    <label>最大検出持続時間 (ms)<br><span style="color:#666;font-size:11px">短くするほど長い音を除外</span></label>
+    <input type="range" id="maxDuration" min="30" max="500" step="10" value="120">
+    <span class="val"><span id="maxDurationVal">120</span> ms</span>
+  </div>
+  <div class="param">
+    <label>クールダウン (ms)<br><span style="color:#666;font-size:11px">連続検出を防ぐ間隔</span></label>
+    <input type="range" id="cooldown" min="100" max="2000" step="50" value="400">
+    <span class="val"><span id="cooldownVal">400</span> ms</span>
+  </div>
+  <div class="param">
+    <label>閾値オーバーライド<br><span style="color:#666;font-size:11px">0 = プロファイル値を使用</span></label>
+    <input type="range" id="threshold" min="0" max="1" step="0.01" value="0">
+    <span class="val"><span id="thresholdVal">profile</span></span>
+  </div>
+</div>
+
+<div id="log"><span class="info">プロファイルJSONを選択してください</span></div>
+
+<script src="../lib/sound-detector.js"></script>
+<script>
+  const detector = new SoundDetector({
+    cooldownMs: 400,
+    checkIntervalMs: 30,
+    minVolume: 0.001,
+    maxDetectDurationMs: 120,
+  });
+
+  // --- チューニングスライダー ---
+  function bindSlider(id, valId, apply) {
+    const slider = document.getElementById(id);
+    const display = document.getElementById(valId);
+    slider.addEventListener('input', () => {
+      apply(parseFloat(slider.value));
+      display.textContent = apply.label ? apply.label(parseFloat(slider.value)) : slider.value;
+    });
+  }
+
+  bindSlider('maxDuration', 'maxDurationVal', v => { detector._options.maxDetectDurationMs = v; });
+  bindSlider('cooldown', 'cooldownVal', v => { detector._options.cooldownMs = v; });
+
+  // 閾値オーバーライド（0 = プロファイル値を使用）
+  document.getElementById('threshold').addEventListener('input', function () {
+    const v = parseFloat(this.value);
+    const display = document.getElementById('thresholdVal');
+    if (v === 0) {
+      detector._thresholdOverride = null;
+      display.textContent = 'profile';
+    } else {
+      detector._thresholdOverride = v;
+      display.textContent = v.toFixed(2);
+    }
+  });
+
+  const log = document.getElementById('log');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const scoreFill = document.getElementById('score-fill');
+  const scoreText = document.getElementById('scoreText');
+
+  function addLog(msg, cls = '') {
+    const el = document.createElement('div');
+    el.className = cls;
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    log.prepend(el);
+  }
+
+  // プロファイル読み込み
+  document.getElementById('profileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    const profile = JSON.parse(text);
+    await detector.loadProfile(profile);
+    addLog(`プロファイル "${profile.name}" を読み込みました (threshold: ${profile.threshold})`, 'info');
+    startBtn.disabled = false;
+  });
+
+  // 検出時コールバック
+  detector.onDetect = (score) => {
+    addLog(`🎯 検出！ score=${score.toFixed(3)}`, 'hit');
+  };
+
+  // 毎フレームのスコア（デバッグ用）
+  detector.onScore = (score) => {
+    scoreText.textContent = score.toFixed(3);
+    scoreFill.style.width = (score * 100) + '%';
+    const thr = detector._thresholdOverride ?? detector._profile?.threshold ?? 1;
+    scoreFill.style.background = score >= thr ? '#c8ff00' : '#555';
+  };
+
+  startBtn.addEventListener('click', async () => {
+    await detector.start();
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    addLog('検出開始', 'info');
+  });
+
+  stopBtn.addEventListener('click', () => {
+    detector.stop();
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    addLog('停止', 'info');
+  });
+</script>
+</body>
+</html>
